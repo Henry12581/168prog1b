@@ -5,14 +5,27 @@ import {MTLLoader} from './lib/MTLLoader.js';
 import {GUI} from './lib/lil-gui.module.min.js';
 import {VRButton} from './lib/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './lib/jsm/webxr/XRControllerModelFactory.js';
+import { XRHandModelFactory } from './lib/jsm/webxr/XRHandModelFactory.js';
 import { BoxLineGeometry } from './lib/jsm/geometries/BoxLineGeometry.js';
 
 
 let camera, scene, raycaster, renderer;
-let controller1, controller2;
+let controller1, controller2,hand1, hand2;
 let controllerGrip1, controllerGrip2;
 
 let room, marker, floor, baseReferenceSpace;
+
+const spheres = [];
+const tmpVector1 = new THREE.Vector3();
+const tmpVector2 = new THREE.Vector3();
+
+let grabbing = false;
+const scaling = {
+    active: false,
+    initialDistance: 0,
+    object: null,
+    initialScale: 1
+};
 
 let INTERSECTION;
 const tempMatrix = new THREE.Matrix4();
@@ -146,10 +159,7 @@ function init() {
     makeTree(0, -15);
 
 
-    const boxWidth = 1;
-    const boxHeight = 1;
-    const boxDepth = 1;
-    const geometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+    const geometry = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) ] );
 
     function makeInstance(geometry, color, x, y) {
         const loader = new THREE.TextureLoader();
@@ -483,6 +493,7 @@ function init() {
     // order to match the orientation of the held device.
 
     const controllerModelFactory = new XRControllerModelFactory();
+    const handModelFactory = new XRHandModelFactory();
 
     controllerGrip1 = renderer.xr.getControllerGrip( 0 );
     controllerGrip1.add( controllerModelFactory.createControllerModel( controllerGrip1 ) );
@@ -494,7 +505,145 @@ function init() {
 
     //
 
+    // Hand 1
+    controllerGrip1 = renderer.xr.getControllerGrip( 0 );
+    controllerGrip1.add( controllerModelFactory.createControllerModel( controllerGrip1 ) );
+    scene.add( controllerGrip1 );
+
+    hand1 = renderer.xr.getHand( 0 );
+    hand1.addEventListener( 'pinchstart', onPinchStartLeft );
+    hand1.addEventListener( 'pinchend', () => {
+
+        scaling.active = false;
+
+    } );
+    hand1.add( handModelFactory.createHandModel( hand1 ) );
+
+    scene.add( hand1 );
+
+    // Hand 2
+    controllerGrip2 = renderer.xr.getControllerGrip( 1 );
+    controllerGrip2.add( controllerModelFactory.createControllerModel( controllerGrip2 ) );
+    scene.add( controllerGrip2 );
+
+    hand2 = renderer.xr.getHand( 1 );
+    hand2.addEventListener( 'pinchstart', onPinchStartRight );
+    hand2.addEventListener( 'pinchend', onPinchEndRight );
+    hand2.add( handModelFactory.createHandModel( hand2 ) );
+    scene.add( hand2 );
+
+    //
+
+
+    const line = new THREE.Line( geometry );
+    line.name = 'line';
+    line.scale.z = 5;
+
+    controller1.add( line.clone() );
+    controller2.add( line.clone() );
+
+    //
     window.addEventListener( 'resize', onWindowResize, false );
+
+}
+
+function onPinchStartLeft( event ) {
+
+    const controller = event.target;
+
+    if ( grabbing ) {
+
+        const indexTip = controller.joints[ 'index-finger-tip' ];
+        const sphere = collideObject( indexTip );
+
+        if ( sphere ) {
+
+            const sphere2 = hand2.userData.selected;
+            console.log( 'sphere1', sphere, 'sphere2', sphere2 );
+            if ( sphere === sphere2 ) {
+
+                scaling.active = true;
+                scaling.object = sphere;
+                scaling.initialScale = sphere.scale.x;
+                scaling.initialDistance = indexTip.position.distanceTo( hand2.joints[ 'index-finger-tip' ].position );
+                return;
+
+            }
+
+        }
+
+    }
+
+    const geometry = new THREE.BoxGeometry( SphereRadius, SphereRadius, SphereRadius );
+    const material = new THREE.MeshStandardMaterial( {
+        color: Math.random() * 0xffffff,
+        roughness: 1.0,
+        metalness: 0.0
+    } );
+    const spawn = new THREE.Mesh( geometry, material );
+    spawn.geometry.computeBoundingSphere();
+
+    const indexTip = controller.joints[ 'index-finger-tip' ];
+    spawn.position.copy( indexTip.position );
+    spawn.quaternion.copy( indexTip.quaternion );
+
+    spheres.push( spawn );
+
+    scene.add( spawn );
+
+}
+
+function collideObject( indexTip ) {
+
+    for ( let i = 0; i < spheres.length; i ++ ) {
+
+        const sphere = spheres[ i ];
+        const distance = indexTip.getWorldPosition( tmpVector1 ).distanceTo( sphere.getWorldPosition( tmpVector2 ) );
+
+        if ( distance < sphere.geometry.boundingSphere.radius * sphere.scale.x ) {
+
+            return sphere;
+
+        }
+
+    }
+
+    return null;
+
+}
+
+function onPinchStartRight( event ) {
+
+    const controller = event.target;
+    const indexTip = controller.joints[ 'index-finger-tip' ];
+    const object = collideObject( indexTip );
+    if ( object ) {
+
+        grabbing = true;
+        indexTip.attach( object );
+        controller.userData.selected = object;
+        console.log( 'Selected', object );
+
+    }
+
+}
+
+function onPinchEndRight( event ) {
+
+    const controller = event.target;
+
+    if ( controller.userData.selected !== undefined ) {
+
+        const object = controller.userData.selected;
+        object.material.emissive.b = 0;
+        scene.attach( object );
+
+        controller.userData.selected = undefined;
+        grabbing = false;
+
+    }
+
+    scaling.active = false;
 
 }
 
@@ -542,8 +691,17 @@ function animate() {
 }
 
 function render() {
-    INTERSECTION = undefined;
+    if ( scaling.active ) {
 
+        const indexTip1Pos = hand1.joints[ 'index-finger-tip' ].position;
+        const indexTip2Pos = hand2.joints[ 'index-finger-tip' ].position;
+        const distance = indexTip1Pos.distanceTo( indexTip2Pos );
+        const newScale = scaling.initialScale + distance / scaling.initialDistance - 1;
+        scaling.object.scale.setScalar( newScale );
+
+    }
+
+    INTERSECTION = undefined;
     if ( controller1.userData.isSelecting === true ) {
 
         tempMatrix.identity().extractRotation( controller1.matrixWorld );
