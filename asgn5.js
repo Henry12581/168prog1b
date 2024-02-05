@@ -15,7 +15,6 @@ let controllerGrip1, controllerGrip2;
 
 let room, marker, floor, baseReferenceSpace;
 
-const spheres = [];
 const tmpVector1 = new THREE.Vector3();
 const tmpVector2 = new THREE.Vector3();
 let controls;
@@ -26,9 +25,12 @@ const scaling = {
     object: null,
     initialScale: 1
 };
+const spheres = [];
 let container;
 let INTERSECTION;
 const tempMatrix = new THREE.Matrix4();
+const geometry = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) ] );
+
 
 init();
 animate();
@@ -43,7 +45,7 @@ function init() {
     scene.background = new THREE.Color( 0x505050 );
 
     camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set( 0, 1, 3 );
+    camera.position.set( 0, 1.6, 3 );
 
     controls = new OrbitControls( camera, container );
     controls.target.set( 0, 1.6, 0 );
@@ -167,7 +169,6 @@ function init() {
     makeTree(0, -15);
 
 
-    const geometry = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) ] );
 
     function makeInstance(geometry, color, x, y) {
         const loader = new THREE.TextureLoader();
@@ -435,8 +436,8 @@ function init() {
     renderer.setSize( window.innerWidth, window.innerHeight );
 
     renderer.xr.addEventListener( 'sessionstart', () => baseReferenceSpace = renderer.xr.getReferenceSpace() );
-    renderer.xr.enabled = true;
     renderer.shadowMap.enabled = true;
+    renderer.xr.enabled = true;
 
     container.appendChild( renderer.domElement );
     document.body.appendChild( renderer.domElement );
@@ -546,10 +547,10 @@ function init() {
     controller2.add( line.clone() );
 
     //
-    window.addEventListener( 'resize', onWindowResize, false );
+    window.addEventListener( 'resize', onWindowResize );
 
 }
-
+const SphereRadius = 0.05;
 function onPinchStartLeft( event ) {
 
     const controller = event.target;
@@ -577,6 +578,7 @@ function onPinchStartLeft( event ) {
 
     }
 
+    const geometry = new THREE.BoxGeometry( SphereRadius, SphereRadius, SphereRadius );
     const material = new THREE.MeshStandardMaterial( {
         color: Math.random() * 0xffffff,
         roughness: 1.0,
@@ -613,6 +615,7 @@ function collideObject( indexTip ) {
     return null;
 
 }
+
 
 function onPinchStartRight( event ) {
 
@@ -702,6 +705,7 @@ function render() {
         scaling.object.scale.setScalar( newScale );
 
     }
+    renderer.render( scene, camera );
 
     INTERSECTION = undefined;
     if ( controller1.userData.isSelecting === true ) {
