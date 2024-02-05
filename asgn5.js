@@ -18,7 +18,7 @@ let room, marker, floor, baseReferenceSpace;
 const spheres = [];
 const tmpVector1 = new THREE.Vector3();
 const tmpVector2 = new THREE.Vector3();
-
+let controls;
 let grabbing = false;
 const scaling = {
     active: false,
@@ -26,7 +26,7 @@ const scaling = {
     object: null,
     initialScale: 1
 };
-
+let container;
 let INTERSECTION;
 const tempMatrix = new THREE.Matrix4();
 
@@ -34,6 +34,9 @@ init();
 animate();
 
 function init() {
+    container = document.createElement( 'div' );
+    document.body.appendChild( container );
+
     const textureLoader = new THREE.TextureLoader();
 
     scene = new THREE.Scene();
@@ -41,6 +44,10 @@ function init() {
 
     camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set( 0, 1, 3 );
+
+    controls = new OrbitControls( camera, container );
+    controls.target.set( 0, 1.6, 0 );
+    controls.update();
 
     room = new THREE.LineSegments(
         new BoxLineGeometry( 500, 500, 500, 10, 10, 10 ).translate( 0, 3, 0 ),
@@ -78,6 +85,7 @@ function init() {
         floorMaterial
     );
 
+    floor.receiveShadow = true;
     scene.add(floor);
 
 
@@ -428,7 +436,9 @@ function init() {
 
     renderer.xr.addEventListener( 'sessionstart', () => baseReferenceSpace = renderer.xr.getReferenceSpace() );
     renderer.xr.enabled = true;
+    renderer.shadowMap.enabled = true;
 
+    container.appendChild( renderer.domElement );
     document.body.appendChild( renderer.domElement );
     document.body.appendChild( VRButton.createButton( renderer ) );
 
@@ -495,13 +505,6 @@ function init() {
     const controllerModelFactory = new XRControllerModelFactory();
     const handModelFactory = new XRHandModelFactory();
 
-    controllerGrip1 = renderer.xr.getControllerGrip( 0 );
-    controllerGrip1.add( controllerModelFactory.createControllerModel( controllerGrip1 ) );
-    scene.add( controllerGrip1 );
-
-    controllerGrip2 = renderer.xr.getControllerGrip( 1 );
-    controllerGrip2.add( controllerModelFactory.createControllerModel( controllerGrip2 ) );
-    scene.add( controllerGrip2 );
 
     //
 
@@ -574,7 +577,6 @@ function onPinchStartLeft( event ) {
 
     }
 
-    const geometry = new THREE.BoxGeometry( SphereRadius, SphereRadius, SphereRadius );
     const material = new THREE.MeshStandardMaterial( {
         color: Math.random() * 0xffffff,
         roughness: 1.0,
